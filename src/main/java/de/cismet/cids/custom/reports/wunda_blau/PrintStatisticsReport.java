@@ -5,15 +5,19 @@
 *              ... and it just works.
 *
 ****************************************************/
-/*
- * To change this template, choose Tools | Templates
- * and open the template in the editor.
- */
 package de.cismet.cids.custom.reports.wunda_blau;
 
+import java.text.SimpleDateFormat;
+
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+
+import de.cismet.cids.client.tools.DevelopmentTools;
 
 import de.cismet.cids.dynamics.CidsBean;
 
@@ -27,24 +31,24 @@ public class PrintStatisticsReport {
 
     //~ Instance fields --------------------------------------------------------
 
-    private HashMap<String, Integer> productInformation = new HashMap<String, Integer>();
-    private Date[] fromDate_tillDate;
-    private Collection<CidsBean> billingsBeans;
-    private int amountTotalDownloads = 0;
-    private int amountWithCosts = 0;
-    private int amountWithoutCosts = 0;
-    private int amountVUamtlicherLageplan = 0;
-    private int amountVUhoheitlicheVermessung = 0;
-    private int amountVUsonstige = 0;
-    private int amountVUamtlicherLageplanGB = 0;
-    private int amountVUhoheitlicheVermessungGB = 0;
-    private int amountVUsonstigeGB = 0;
-    private int amountWithCostsVU = 0;
-    private int amountWithCostsWiederver = 0;
-    private double earningsWithCostsVU = 0;
-    private double earningsWithCostsWiederver = 0;
-    private int amountWiederverkaeufe = 0;
-    private int amountWiederverkaeufeGB = 0;
+    protected final HashMap<String, Integer> productInformation = new HashMap<String, Integer>();
+    protected final Date[] fromDate_tillDate;
+    protected final Collection<CidsBean> billingsBeans;
+    protected int amountTotalDownloads = 0;
+    protected int amountWithCosts = 0;
+    protected int amountWithoutCosts = 0;
+    protected int amountVUamtlicherLageplan = 0;
+    protected int amountVUhoheitlicheVermessung = 0;
+    protected int amountVUsonstige = 0;
+    protected int amountWithCostsVU = 0;
+    protected int amountWithCostsWiederver = 0;
+    protected double earningsWithCostsVU = 0;
+    protected double earningsWithCostsWiederver = 0;
+    protected int amountWiederverkaeufe = 0;
+    protected final Set<String> amountWiederverkaeufeGBs = new HashSet<String>();
+    protected final Set<String> amountVUamtlicherLageplanGBs = new HashSet<String>();
+    protected final Set<String> amountVUhoheitlicheVermessungGBs = new HashSet<String>();
+    protected final Set<String> amountVUsonstigeGBs = new HashSet<String>();
 
     //~ Constructors -----------------------------------------------------------
 
@@ -67,30 +71,77 @@ public class PrintStatisticsReport {
 
     /**
      * DOCUMENT ME!
+     *
+     * @param   args  DOCUMENT ME!
+     *
+     * @throws  Exception  DOCUMENT ME!
+     */
+    public static void main(final String[] args) throws Exception {
+        final CidsBean[] billings = new CidsBean[] {
+                DevelopmentTools.createCidsBeanFromRMIConnectionOnLocalhost(
+                    "WUNDA_BLAU",
+                    "Administratoren",
+                    "admin",
+                    "kif",
+                    "billing_billing",
+                    6838)
+            };
+        final ArrayList<CidsBean> list = new ArrayList<CidsBean>(1);
+        list.add(billings[0]);
+
+        System.out.println(PrintStatisticsReport.class.getResourceAsStream(
+                "/de/cismet/cids/custom/reports/wunda_blau/geschaeftsstatisktik.jasper"));
+
+        final SimpleDateFormat formatter = new SimpleDateFormat("dd.MM.yyyy");
+        final Date start = formatter.parse("01.05.2013");
+        final Date end = formatter.parse("31.05.2013");
+
+        final PrintStatisticsReport printStatisticsReport = new PrintStatisticsReport(
+                new Date[] { start, end },
+                list);
+        final BillingStatisticsReport report = printStatisticsReport.createReport();
+        final Map params = report.generateParamters();
+        DevelopmentTools.showReportForBeans(
+            "/de/cismet/cids/custom/reports/wunda_blau/geschaeftsstatisktik.jasper",
+            list,
+            params);
+    }
+
+    /**
+     * DOCUMENT ME!
      */
     public void print() {
         if (!billingsBeans.isEmpty()) {
-            final BillingStatisticsReport report = new BillingStatisticsReport(
-                    billingsBeans,
-                    fromDate_tillDate[0],
-                    fromDate_tillDate[1],
-                    amountTotalDownloads,
-                    amountWithCosts,
-                    amountWithoutCosts,
-                    amountVUamtlicherLageplan,
-                    amountVUhoheitlicheVermessung,
-                    amountVUsonstige,
-                    amountVUamtlicherLageplanGB,
-                    amountVUhoheitlicheVermessungGB,
-                    amountVUsonstigeGB,
-                    amountWithCostsVU,
-                    amountWithCostsWiederver,
-                    earningsWithCostsVU,
-                    earningsWithCostsWiederver,
-                    amountWiederverkaeufe,
-                    amountWiederverkaeufeGB);
+            final BillingStatisticsReport report = createReport();
             report.generateReport();
         }
+    }
+
+    /**
+     * DOCUMENT ME!
+     *
+     * @return  DOCUMENT ME!
+     */
+    protected BillingStatisticsReport createReport() {
+        return new BillingStatisticsReport(
+                billingsBeans,
+                fromDate_tillDate[0],
+                fromDate_tillDate[1],
+                amountTotalDownloads,
+                amountWithCosts,
+                amountWithoutCosts,
+                amountVUamtlicherLageplan,
+                amountVUhoheitlicheVermessung,
+                amountVUsonstige,
+                amountVUamtlicherLageplanGBs.size(),
+                amountVUhoheitlicheVermessungGBs.size(),
+                amountVUsonstigeGBs.size(),
+                amountWithCostsVU,
+                amountWithCostsWiederver,
+                earningsWithCostsVU,
+                earningsWithCostsWiederver,
+                amountWiederverkaeufe,
+                amountWiederverkaeufeGBs.size());
     }
 
     /**
@@ -103,7 +154,7 @@ public class PrintStatisticsReport {
 
         final String geschaeftsbuchnummer = (String)billing.getProperty("geschaeftsbuchnummer");
         boolean geschaeftsbuchnummerIsValid = false;
-        if (!geschaeftsbuchnummer.trim().equals("")) {
+        if ((geschaeftsbuchnummer != null) && !geschaeftsbuchnummer.trim().equals("")) {
             geschaeftsbuchnummerIsValid = true;
         }
 
@@ -128,7 +179,7 @@ public class PrintStatisticsReport {
         if (verwendungsKey.startsWith("WV")) {
             amountWiederverkaeufe++;
             if (geschaeftsbuchnummerIsValid) {
-                amountWiederverkaeufeGB++;
+                amountWiederverkaeufeGBs.add(geschaeftsbuchnummer);
             }
             if (withCosts) {
                 amountWithCostsWiederver++;
@@ -139,17 +190,17 @@ public class PrintStatisticsReport {
         if (verwendungsKey.equals("VU aL")) {
             amountVUamtlicherLageplan++;
             if (geschaeftsbuchnummerIsValid) {
-                amountVUamtlicherLageplanGB++;
+                amountVUamtlicherLageplanGBs.add(geschaeftsbuchnummer);
             }
         } else if (verwendungsKey.equals("VU hV")) {
             amountVUhoheitlicheVermessung++;
             if (geschaeftsbuchnummerIsValid) {
-                amountVUhoheitlicheVermessungGB++;
+                amountVUhoheitlicheVermessungGBs.add(geschaeftsbuchnummer);
             }
         } else if (verwendungsKey.equals("VU s")) {
             amountVUsonstige++;
             if (geschaeftsbuchnummerIsValid) {
-                amountVUsonstigeGB++;
+                amountVUsonstigeGBs.add(geschaeftsbuchnummer);
             }
         }
     }

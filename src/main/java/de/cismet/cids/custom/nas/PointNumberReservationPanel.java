@@ -19,6 +19,8 @@ import com.vividsolutions.jts.geom.Geometry;
 import org.apache.log4j.Logger;
 
 import java.awt.EventQueue;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
@@ -173,24 +175,14 @@ public class PointNumberReservationPanel extends javax.swing.JPanel {
                 }
             });
 
-        final JTextComponent textComp = (JTextComponent)cbNbz.getEditor().getEditorComponent();
-        textComp.getDocument().addDocumentListener(new DocumentListener() {
+        cbNbz.addActionListener(new ActionListener() {
 
                 @Override
-                public void insertUpdate(final DocumentEvent e) {
-                    checkButtonState();
-                }
-
-                @Override
-                public void removeUpdate(final DocumentEvent e) {
-                    checkButtonState();
-                }
-
-                @Override
-                public void changedUpdate(final DocumentEvent e) {
+                public void actionPerformed(final ActionEvent e) {
                     checkButtonState();
                 }
             });
+
         btnRefreshNbz.setVisible(false);
         lblAnzWarn1.setVisible(false);
         lblAnzWarn2.setVisible(false);
@@ -417,7 +409,13 @@ public class PointNumberReservationPanel extends javax.swing.JPanel {
 
         pnlNbz.setLayout(new java.awt.GridBagLayout());
 
-        cbNbz.setEditable(true);
+        cbNbz.addActionListener(new java.awt.event.ActionListener() {
+
+                @Override
+                public void actionPerformed(final java.awt.event.ActionEvent evt) {
+                    cbNbzActionPerformed(evt);
+                }
+            });
         gridBagConstraints = new java.awt.GridBagConstraints();
         gridBagConstraints.gridx = 0;
         gridBagConstraints.gridy = 0;
@@ -499,11 +497,7 @@ public class PointNumberReservationPanel extends javax.swing.JPanel {
         gridBagConstraints.insets = new java.awt.Insets(0, 0, 5, 0);
         add(lblAnzWarn2, gridBagConstraints);
 
-        jspAnzahl.setModel(new javax.swing.SpinnerNumberModel(
-                Integer.valueOf(0),
-                Integer.valueOf(0),
-                null,
-                Integer.valueOf(1)));
+        jspAnzahl.setModel(new javax.swing.SpinnerNumberModel(0, 0, null, 1));
         jspAnzahl.setMinimumSize(new java.awt.Dimension(100, 28));
         jspAnzahl.setPreferredSize(new java.awt.Dimension(100, 28));
         jspAnzahl.addChangeListener(new javax.swing.event.ChangeListener() {
@@ -562,7 +556,9 @@ public class PointNumberReservationPanel extends javax.swing.JPanel {
      * @param  evt  DOCUMENT ME!
      */
     private void btnErstellenActionPerformed(final java.awt.event.ActionEvent evt) { //GEN-FIRST:event_btnErstellenActionPerformed
-        // check anr
+        pnrDialog.warnIfNeeded();
+
+// check anr
         final String anr = pnrDialog.getAnr();
         if ((anr == null) || anr.isEmpty()) {
             JOptionPane.showMessageDialog(
@@ -584,7 +580,7 @@ public class PointNumberReservationPanel extends javax.swing.JPanel {
             LOG.error("Could not clear Protokoll Pane", ex);
         }
 
-        final String nummerierungsbezirk = (String)cbNbz.getEditor().getItem();
+        final String nummerierungsbezirk = (String)cbNbz.getSelectedItem();
         if (!anr.matches("[a-zA-Z0-9_-]*") || !nummerierungsbezirk.matches("[0-9]*")) {
             JOptionPane.showMessageDialog(
                 StaticSwingTools.getParentFrame(this),
@@ -599,6 +595,7 @@ public class PointNumberReservationPanel extends javax.swing.JPanel {
         }
         // disable the done Button of the Dialog
         pnrDialog.enableDoneButton(false);
+        pnrDialog.memorizeAnrPrefix();
         btnErstellen.setEnabled(false);
         protokollPane.setBusy(true);
         final String anrPrefix = pnrDialog.getAnrPrefix();
@@ -623,7 +620,7 @@ public class PointNumberReservationPanel extends javax.swing.JPanel {
                     if (pnrDialog.isErgaenzenMode()) {
                         action = new ServerActionParameter(
                                 PointNumberReserverationServerAction.PARAMETER_TYPE.ACTION.toString(),
-                                PointNumberReserverationServerAction.ACTION_TYPE.EXTEND_RESERVATION);
+                                PointNumberReserverationServerAction.ACTION_TYPE.PROLONG_RESERVATION);
                     } else {
                         action = new ServerActionParameter(
                                 PointNumberReserverationServerAction.PARAMETER_TYPE.ACTION.toString(),
@@ -693,6 +690,7 @@ public class PointNumberReservationPanel extends javax.swing.JPanel {
                                     }
                                     pnrDialog.setResult(result);
                                     protokollPane.addMessage("Ok.", Styles.SUCCESS);
+                                    pnrDialog.setSuccess();
                                     protokollPane.setBusy(false);
                                     protokollPane.addMessage(
                                         "Reservierung für Antragsnummer: "
@@ -702,14 +700,16 @@ public class PointNumberReservationPanel extends javax.swing.JPanel {
                                     protokollPane.addMessage("", Styles.INFO);
                                     for (final PointNumberReservation pnr : result.getPointNumbers()) {
                                         protokollPane.addMessage(
-                                            pnr.getPunktnummern()
+                                            pnr.getPunktnummer()
                                                     + " ("
                                                     + dateFormater.format(dateParser.parse(pnr.getAblaufDatum()))
                                                     + ")",
                                             Styles.INFO);
                                     }
                                     if (!pnrDialog.isErgaenzenMode()) {
-                                        pnrDialog.addAnr(result.getAntragsnummer().substring(5));
+                                        final String anr = result.getAntragsnummer();
+                                        final int underscorePos = anr.indexOf("_");
+                                        pnrDialog.addAnr(anr.substring(underscorePos + 1));
                                     }
                                     pnrDialog.enableDoneButton(true);
                                     btnErstellen.setEnabled(true);
@@ -767,6 +767,7 @@ public class PointNumberReservationPanel extends javax.swing.JPanel {
                                     if ((anrExists && pnrDialog.isErgaenzenMode())
                                                 || (!anrExists && !pnrDialog.isErgaenzenMode())) {
                                         protokollPane.addMessage("Ok.", Styles.SUCCESS);
+                                        pnrDialog.setSuccess();
                                         protokollPane.addMessage("Sende Reservierungsauftrag.", Styles.INFO);
 //                                startReservationWorker = true;
                                         reservationWorker.run();
@@ -811,7 +812,7 @@ public class PointNumberReservationPanel extends javax.swing.JPanel {
      * DOCUMENT ME!
      */
     public void checkButtonState() {
-        if ((cbNbz.getEditor().getItem() == null) || ((String)cbNbz.getEditor().getItem()).isEmpty()) {
+        if ((cbNbz.getSelectedItem() == null) || ((String)cbNbz.getSelectedItem()).isEmpty()) {
             btnErstellen.setEnabled(false);
             return;
         }
@@ -873,6 +874,15 @@ public class PointNumberReservationPanel extends javax.swing.JPanel {
     private void jspAnzahlStateChanged(final javax.swing.event.ChangeEvent evt) { //GEN-FIRST:event_jspAnzahlStateChanged
 //        handleAnzahlSpinnderChanged();
     } //GEN-LAST:event_jspAnzahlStateChanged
+
+    /**
+     * DOCUMENT ME!
+     *
+     * @param  evt  DOCUMENT ME!
+     */
+    private void cbNbzActionPerformed(final java.awt.event.ActionEvent evt) { //GEN-FIRST:event_cbNbzActionPerformed
+        // TODO add your handling code here:
+    } //GEN-LAST:event_cbNbzActionPerformed
 
     /**
      * DOCUMENT ME!

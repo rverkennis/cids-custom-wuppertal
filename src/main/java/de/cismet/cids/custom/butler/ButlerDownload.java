@@ -19,9 +19,11 @@ import org.openide.util.Exceptions;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.io.UnsupportedEncodingException;
 
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.net.URLEncoder;
 
 import java.util.ArrayList;
 import java.util.Properties;
@@ -41,9 +43,9 @@ import de.cismet.cids.custom.wunda_blau.search.actions.ButlerQueryAction;
 
 import de.cismet.cids.server.actions.ServerActionParameter;
 
-import de.cismet.security.WebAccessManager;
+import de.cismet.commons.security.exceptions.BadHttpStatusCodeException;
 
-import de.cismet.security.exceptions.BadHttpStatusCodeException;
+import de.cismet.security.WebAccessManager;
 
 import de.cismet.tools.gui.downloadmanager.HttpDownload;
 
@@ -93,22 +95,25 @@ public class ButlerDownload extends HttpDownload {
     private boolean useZipFile = false;
     private boolean isButler2 = false;
     private String boxSize;
+    private boolean isEtrsRahmenkarte = false;
 
     //~ Constructors -----------------------------------------------------------
 
     /**
      * Constructor for a Butler 2 request.
      *
-     * @param  directory  DOCUMENT ME!
-     * @param  orderId    DOCUMENT ME!
-     * @param  product    DOCUMENT ME!
-     * @param  boxSize    DOCUMENT ME!
-     * @param  middleX    DOCUMENT ME!
-     * @param  middleY    DOCUMENT ME!
+     * @param  directory          DOCUMENT ME!
+     * @param  orderId            DOCUMENT ME!
+     * @param  product            DOCUMENT ME!
+     * @param  isEtrsRahmenkarte  DOCUMENT ME!
+     * @param  boxSize            DOCUMENT ME!
+     * @param  middleX            DOCUMENT ME!
+     * @param  middleY            DOCUMENT ME!
      */
     public ButlerDownload(final String directory,
             final String orderId,
             final ButlerProduct product,
+            final boolean isEtrsRahmenkarte,
             final String boxSize,
             final double middleX,
             final double middleY) {
@@ -116,6 +121,7 @@ public class ButlerDownload extends HttpDownload {
         this.directory = directory;
         this.orderId = orderId;
         this.product = product;
+        this.isEtrsRahmenkarte = isEtrsRahmenkarte;
         this.minX = middleX;
         this.minY = middleY;
 //        this.maxX = maxX;C
@@ -208,6 +214,10 @@ public class ButlerDownload extends HttpDownload {
         }
         if (requestId == null) {
             // log that something went terribly wrong...
+            log.error("could not register butler request.");
+            error(new IllegalStateException("Fehler beim Senden des Butler Auftrags."));
+            this.status = State.COMPLETED_WITH_ERROR;
+            stateChanged();
             return;
         }
 
@@ -230,11 +240,16 @@ public class ButlerDownload extends HttpDownload {
         } catch (InterruptedException ex) {
             doCancellationHandling(true, true);
             Thread.currentThread().interrupt();
+            log.error("Butler Download was interrupted", ex);
+            error(ex);
             return;
         } catch (ExecutionException ex) {
-            log.warn("could not execute butler download", ex);
+            log.error("could not execute butler download", ex);
+            error(ex);
         } catch (TimeoutException ex) {
-            log.warn("the maximum timeout for butler download is exceeded", ex);
+            log.error("the maximum timeout for butler download is exceeded", ex);
+            error(new TimeoutException(
+                    org.openide.util.NbBundle.getMessage(ButlerDownload.class, "ButlerDownload.timeoutErrorMessage")));
         }
 
         if ((result == null) || (result.isEmpty())) {
@@ -383,6 +398,9 @@ public class ButlerDownload extends HttpDownload {
             final ServerActionParameter paramIsWmps = new ServerActionParameter(ButlerQueryAction.PARAMETER_TYPE.IS_WMPS
                             .toString(),
                     true);
+            final ServerActionParameter etrsRahmenkarte = new ServerActionParameter(
+                    ButlerQueryAction.PARAMETER_TYPE.ETRS_BLATTSCHNITT.toString(),
+                    this.isEtrsRahmenkarte);
             try {
                 return (String)SessionManager.getProxy()
                             .executeTask(
@@ -392,6 +410,7 @@ public class ButlerDownload extends HttpDownload {
                                     paramMethod,
                                     paramOrderId,
                                     paramProduct,
+                                    etrsRahmenkarte,
                                     paramMinX,
                                     paramMinY,
                                     paramBoxSize,
@@ -497,37 +516,41 @@ public class ButlerDownload extends HttpDownload {
             final StringBuilder baseUrl = new StringBuilder();
             final ArrayList<String> fileExtensions = new ArrayList<String>();
             final String format = product.getFormat().getKey();
-            baseUrl.append(BUTLER_SERVER_BASE_PATH);
-            if (format.equals("dxf")) {
-                baseUrl.append(DXF_RESULT_DIR);
-                fileExtensions.add(".dxf");
-            } else if (format.equals("shp")) {
-                baseUrl.append(SHAPE_RESULT_DIR);
-                fileExtensions.add(".shp");
-                fileExtensions.add(".prj");
-                fileExtensions.add(".dbf");
-                fileExtensions.add(".shx");
-            } else if (format.equals("tif")) {
-                baseUrl.append(TIF_RESULT_DIR);
-                fileExtensions.add(".tif");
-            } else if (format.equals("geotif")) {
-                baseUrl.append(TIF_RESULT_DIR);
-                fileExtensions.add(".tif");
-                fileExtensions.add(".tfw");
-            } else {
-                // this must be true here: format.equals("pdf")
-                baseUrl.append(PDF_RESULT_DIR);
-                fileExtensions.add(".pdf");
-            }
-            baseUrl.append("/");
-            baseUrl.append(requestId);
-            for (final String fileExtension : fileExtensions) {
-                try {
-                    result.add(new URL(baseUrl.toString() + fileExtension));
-                } catch (MalformedURLException ex) {
-                    // should not happen
-                    log.error("Missformed Download URL");
+            try {
+                baseUrl.append(BUTLER_SERVER_BASE_PATH);
+                if (format.equals("dxf")) {
+                    baseUrl.append(DXF_RESULT_DIR);
+                    fileExtensions.add(".dxf");
+                } else if (format.equals("shp")) {
+                    baseUrl.append(SHAPE_RESULT_DIR);
+                    fileExtensions.add(".shp");
+                    fileExtensions.add(".prj");
+                    fileExtensions.add(".dbf");
+                    fileExtensions.add(".shx");
+                } else if (format.equals("tif")) {
+                    baseUrl.append(TIF_RESULT_DIR);
+                    fileExtensions.add(".tif");
+                } else if (format.equals("geotif")) {
+                    baseUrl.append(TIF_RESULT_DIR);
+                    fileExtensions.add(".tif");
+                    fileExtensions.add(".tfw");
+                } else {
+                    // this must be true here: format.equals("pdf")
+                    baseUrl.append(PDF_RESULT_DIR);
+                    fileExtensions.add(".pdf");
                 }
+                baseUrl.append("/");
+                baseUrl.append(URLEncoder.encode(requestId, "UTF8"));
+                for (final String fileExtension : fileExtensions) {
+                    try {
+                        result.add(new URL(baseUrl.toString() + fileExtension));
+                    } catch (MalformedURLException ex) {
+                        // should not happen
+                        log.error("Missformed Download URL");
+                    }
+                }
+            } catch (UnsupportedEncodingException ex) {
+                log.error("Unsupported Encoding", ex); // never thrown
             }
             return result;
         }
@@ -552,6 +575,9 @@ public class ButlerDownload extends HttpDownload {
                     } else {
                         return null;
                     }
+                } catch (final Exception ex) {
+                    log.warn("unknown download error", ex);
+                    return null;
                 }
                 if (Thread.interrupted()) {
                     if (log.isDebugEnabled()) {

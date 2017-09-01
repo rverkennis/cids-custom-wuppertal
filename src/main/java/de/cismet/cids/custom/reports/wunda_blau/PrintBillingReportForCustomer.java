@@ -11,11 +11,18 @@
  */
 package de.cismet.cids.custom.reports.wunda_blau;
 
+import Sirius.navigator.ui.ComponentRegistry;
+
 import org.apache.log4j.Logger;
+
+import org.jdesktop.swingx.JXErrorPane;
+import org.jdesktop.swingx.error.ErrorInfo;
 
 import org.openide.util.NbBundle;
 
 import java.math.BigDecimal;
+
+import java.sql.Timestamp;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -24,14 +31,19 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Observable;
 import java.util.Observer;
+import java.util.logging.Level;
 
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.SwingUtilities;
+import javax.swing.SwingWorker;
 
 import de.cismet.cids.dynamics.CidsBean;
 
 import de.cismet.cismap.commons.gui.printing.JasperReportDownload;
+import de.cismet.cismap.commons.interaction.CismapBroker;
 
+import de.cismet.tools.gui.StaticSwingTools;
 import de.cismet.tools.gui.downloadmanager.Download;
 
 /**
@@ -54,7 +66,6 @@ public class PrintBillingReportForCustomer {
     private Date[] fromDate_tillDate;
     private Collection<CidsBean> billingsBeans;
     private boolean isRechnungsanlage;
-    private boolean markBillingsAsBilled;
     private int amountTotalDownloads = 0;
     private int amountWithCosts = 0;
     private int amountWithoutCosts = 0;
@@ -64,15 +75,16 @@ public class PrintBillingReportForCustomer {
     private int amountEigenerGebrauch = 0;
     private int amountWiederverkauf = 0;
     private int amountEigenerGebrauchGebührenbefreit = 0;
-    private HashSet amountVUamtlicherLageplanGB = new HashSet();
-    private HashSet amountVUhoheitlicheVermessungGB = new HashSet();
-    private HashSet amountVUsonstigeGB = new HashSet();
-    private HashSet amountEigenerGebrauchGB = new HashSet();
-    private HashSet amountWiederverkaufGB = new HashSet();
-    private HashSet amountEigenerGebrauchGebührenbefreitGB = new HashSet();
-    private JPanel panel;
-    private boolean showBillingWithoutCostInReport;
+    private final HashSet amountVUamtlicherLageplanGB = new HashSet();
+    private final HashSet amountVUhoheitlicheVermessungGB = new HashSet();
+    private final HashSet amountVUsonstigeGB = new HashSet();
+    private final HashSet amountEigenerGebrauchGB = new HashSet();
+    private final HashSet amountWiederverkaufGB = new HashSet();
+    private final HashSet amountEigenerGebrauchGebührenbefreitGB = new HashSet();
+    private final JPanel panel;
+    private final boolean showBillingWithoutCostInReport;
     private DownloadFinishedObserver downloadFinishedObserver = new DownloadFinishedObserver();
+    private final BillingDoneListener billingDoneListener;
 
     //~ Constructors -----------------------------------------------------------
 
@@ -83,25 +95,25 @@ public class PrintBillingReportForCustomer {
      * @param  billingsBeans                   DOCUMENT ME!
      * @param  fromDate_tillDate               DOCUMENT ME!
      * @param  isRechnungsanlage               DOCUMENT ME!
-     * @param  markBillingsAsBilled            DOCUMENT ME!
      * @param  panel                           DOCUMENT ME!
      * @param  showBillingWithoutCostInReport  DOCUMENT ME!
+     * @param  billingDoneListener             DOCUMENT ME!
      */
     public PrintBillingReportForCustomer(final CidsBean kundeBean,
             final Collection<CidsBean> billingsBeans,
             final Date[] fromDate_tillDate,
             final boolean isRechnungsanlage,
-            final boolean markBillingsAsBilled,
             final JPanel panel,
-            final boolean showBillingWithoutCostInReport) {
+            final boolean showBillingWithoutCostInReport,
+            final BillingDoneListener billingDoneListener) {
         this.kundeBean = kundeBean;
         this.fromDate_tillDate = fromDate_tillDate;
         this.isRechnungsanlage = isRechnungsanlage;
-        this.markBillingsAsBilled = markBillingsAsBilled;
         this.billingsBeans = billingsBeans;
         this.panel = panel;
         this.showBillingWithoutCostInReport = showBillingWithoutCostInReport;
         totalSum = generateStatisticsForTheReport(billingsBeans);
+        this.billingDoneListener = billingDoneListener;
     }
 
     //~ Methods ----------------------------------------------------------------
@@ -110,28 +122,55 @@ public class PrintBillingReportForCustomer {
      * DOCUMENT ME!
      */
     public void print() {
-        Collection<CidsBean> filteredBuchungen_mwst0 = new ArrayList<CidsBean>();
-        BigDecimal nettoSum_0 = null;
-        BigDecimal bruttoSum_0 = null;
+        final Object[] mwst0 = new Object[3];
+        final Object[] kataster_mwst0 = new Object[3];
+        final Object[] baulasten_mwst0 = new Object[3];
+        final Object[] mwst19 = new Object[3];
+
+        final Collection<CidsBean> filteredBuchungen_mwst0 = new ArrayList<CidsBean>();
+        final Collection<CidsBean> filteredBuchungen_kataster_mwst0 = new ArrayList<CidsBean>();
+        final Collection<CidsBean> filteredBuchungen_baulasten_mwst0 = new ArrayList<CidsBean>();
         boolean noData = true;
         if (billingInformation.containsKey(0d)) {
             final HashMap<String, Object> mwst_information_0 = billingInformation.get(0d);
-            filteredBuchungen_mwst0 = (Collection<CidsBean>)mwst_information_0.get("billings");
-            nettoSum_0 = (BigDecimal)mwst_information_0.get("netto_summe");
-            bruttoSum_0 = (BigDecimal)mwst_information_0.get("brutto_summe");
+            final Collection<CidsBean> billings = (Collection<CidsBean>)mwst_information_0.get("billings");
+            filteredBuchungen_mwst0.addAll(billings);
+            BigDecimal katasterNetto = new BigDecimal(0.0);
+            BigDecimal katasterBrutto = new BigDecimal(0.0);
+            BigDecimal baulastenNetto = new BigDecimal(0.0);
+            BigDecimal baulastenBrutto = new BigDecimal(0.0);
+            for (final CidsBean billing : billings) {
+                if ("bla".equals(billing.getProperty("produktkey"))
+                            || "blab_be".equals(billing.getProperty("produktkey"))) {
+                    filteredBuchungen_baulasten_mwst0.add(billing);
+                    baulastenNetto = baulastenNetto.add(new BigDecimal((Double)billing.getProperty("netto_summe")));
+                    baulastenBrutto = baulastenBrutto.add(new BigDecimal((Double)billing.getProperty("brutto_summe")));
+                } else {
+                    filteredBuchungen_kataster_mwst0.add(billing);
+                    katasterNetto = katasterNetto.add(new BigDecimal((Double)billing.getProperty("netto_summe")));
+                    katasterBrutto = katasterBrutto.add(new BigDecimal((Double)billing.getProperty("brutto_summe")));
+                }
+            }
+            mwst0[1] = (BigDecimal)mwst_information_0.get("netto_summe");
+            mwst0[2] = (BigDecimal)mwst_information_0.get("brutto_summe");
+            kataster_mwst0[1] = katasterNetto;
+            kataster_mwst0[2] = katasterBrutto;
+            baulasten_mwst0[1] = baulastenNetto;
+            baulasten_mwst0[2] = baulastenBrutto;
             noData = false;
         }
-
-        Collection<CidsBean> filteredBuchungen_mwst19 = new ArrayList<CidsBean>();
-        BigDecimal nettoSum_19 = null;
-        BigDecimal bruttoSum_19 = null;
+        mwst0[0] = filteredBuchungen_mwst0;
+        kataster_mwst0[0] = filteredBuchungen_kataster_mwst0;
+        baulasten_mwst0[0] = filteredBuchungen_baulasten_mwst0;
+        final Collection<CidsBean> filteredBuchungen_mwst19 = new ArrayList<CidsBean>();
         if (billingInformation.containsKey(19d)) {
             final HashMap<String, Object> mwst_information_19 = billingInformation.get(19d);
-            filteredBuchungen_mwst19 = (Collection<CidsBean>)billingInformation.get(19d).get("billings");
-            nettoSum_19 = (BigDecimal)mwst_information_19.get("netto_summe");
-            bruttoSum_19 = (BigDecimal)mwst_information_19.get("brutto_summe");
+            filteredBuchungen_mwst19.addAll((Collection<CidsBean>)billingInformation.get(19d).get("billings"));
+            mwst19[1] = (BigDecimal)mwst_information_19.get("netto_summe");
+            mwst19[2] = (BigDecimal)mwst_information_19.get("brutto_summe");
             noData = false;
         }
+        mwst19[0] = filteredBuchungen_mwst19;
 
         if (noData && !isRechnungsanlage) {
             // the report is an empty Buchungsbeleg
@@ -147,12 +186,10 @@ public class PrintBillingReportForCustomer {
         } else {
             final BillingBuchungsbelegReport report = new BillingBuchungsbelegReport(
                     kundeBean,
-                    filteredBuchungen_mwst0,
-                    nettoSum_0,
-                    bruttoSum_0,
-                    filteredBuchungen_mwst19,
-                    nettoSum_19,
-                    bruttoSum_19,
+                    mwst0,
+                    kataster_mwst0,
+                    baulasten_mwst0,
+                    mwst19,
                     fromDate_tillDate[0],
                     fromDate_tillDate[1],
                     mwstValue,
@@ -314,14 +351,47 @@ public class PrintBillingReportForCustomer {
      * DOCUMENT ME!
      */
     private void markBillings() {
-        if (isRechnungsanlage && markBillingsAsBilled) {
-            for (final CidsBean billing : billingsBeans) {
-                try {
-                    billing.setProperty("abgerechnet", Boolean.TRUE);
-                    billing.persist();
-                } catch (Exception ex) {
-                    LOG.error("Error while setting value or persisting of billing.", ex);
-                }
+        if (isRechnungsanlage) {
+            final BillingBillDialog diag = new BillingBillDialog(ComponentRegistry.getRegistry().getNavigator());
+            StaticSwingTools.showDialog(diag);
+            if (Boolean.TRUE.equals(diag.isBilling())) {
+                new SwingWorker<Void, Void>() {
+
+                        @Override
+                        protected Void doInBackground() throws Exception {
+                            for (final CidsBean billing : billingsBeans) {
+                                try {
+                                    billing.setProperty("abrechnungsdatum", new Timestamp(new Date().getTime()));
+                                    billing.setProperty("abgerechnet", Boolean.TRUE);
+                                    billing.persist();
+                                } catch (final Exception ex) {
+                                    LOG.error("Error while setting value or persisting of billing.", ex);
+                                    final org.jdesktop.swingx.error.ErrorInfo ei = new ErrorInfo(
+                                            "Fehler beim Abrechnen",
+                                            "Buchung konnte nicht auf abgerechnet gesetzt werden.",
+                                            ex.getMessage(),
+                                            null,
+                                            ex,
+                                            Level.ALL,
+                                            null);
+                                    SwingUtilities.invokeLater(new Runnable() {
+
+                                            @Override
+                                            public void run() {
+                                                JXErrorPane.showDialog(
+                                                    StaticSwingTools.getParentFrameIfNotNull(
+                                                        CismapBroker.getInstance().getMappingComponent()),
+                                                    ei);
+                                            }
+                                        });
+                                }
+                            }
+                            billingDoneListener.billingDone(true);
+                            return null;
+                        }
+                    }.execute();
+            } else {
+                billingDoneListener.billingDone(false);
             }
         }
     }
@@ -333,6 +403,25 @@ public class PrintBillingReportForCustomer {
      */
     public void setDownloadFinishedObserver(final DownloadFinishedObserver downloadFinishedObserver) {
         this.downloadFinishedObserver = downloadFinishedObserver;
+    }
+
+    //~ Inner Interfaces -------------------------------------------------------
+
+    /**
+     * DOCUMENT ME!
+     *
+     * @version  $Revision$, $Date$
+     */
+    public interface BillingDoneListener {
+
+        //~ Methods ------------------------------------------------------------
+
+        /**
+         * DOCUMENT ME!
+         *
+         * @param  isDone  DOCUMENT ME!
+         */
+        void billingDone(final boolean isDone);
     }
 
     //~ Inner Classes ----------------------------------------------------------

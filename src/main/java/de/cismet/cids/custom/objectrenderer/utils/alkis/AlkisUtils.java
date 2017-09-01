@@ -28,8 +28,6 @@ import Sirius.navigator.exception.ConnectionException;
 
 import Sirius.server.middleware.impls.domainserver.DomainServerImpl;
 
-import com.fasterxml.jackson.core.JsonParseException;
-import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import de.aedsicad.aaaweb.service.util.Address;
@@ -39,35 +37,26 @@ import de.aedsicad.aaaweb.service.util.LandParcel;
 import de.aedsicad.aaaweb.service.util.Owner;
 import de.aedsicad.aaaweb.service.util.Point;
 
-import javafx.beans.binding.StringBinding;
-
 import org.apache.commons.lang.ArrayUtils;
 
-import org.openide.util.Exceptions;
-
-import java.io.BufferedReader;
-import java.io.IOException;
-
-import java.net.URL;
+import java.io.StringReader;
 
 import java.util.*;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 
+import de.cismet.cids.custom.objectrenderer.utils.billing.BillingPopup;
+import de.cismet.cids.custom.utils.WundaBlauServerResources;
 import de.cismet.cids.custom.utils.alkis.AlkisConstants;
 import de.cismet.cids.custom.utils.alkis.AlkisProducts;
 import de.cismet.cids.custom.wunda_blau.search.actions.ServerAlkisSoapAction;
 
 import de.cismet.cids.dynamics.CidsBean;
 
-import de.cismet.cids.server.actions.HttpTunnelAction;
+import de.cismet.cids.server.actions.GetServerResourceServerAction;
 import de.cismet.cids.server.actions.ServerActionParameter;
-
-import de.cismet.security.AccessHandler;
 
 /**
  * DOCUMENT ME!
@@ -79,26 +68,113 @@ public class AlkisUtils {
 
     //~ Static fields/initializers ---------------------------------------------
 
-    public static final AlkisProducts PRODUCTS = new AlkisProducts(
-            AlkisConstants.COMMONS.USER,
-            AlkisConstants.COMMONS.PASSWORD,
-            AlkisConstants.COMMONS.SERVICE);
-    private static final org.apache.log4j.Logger log = org.apache.log4j.Logger.getLogger(AlkisUtils.class);
+    private static final org.apache.log4j.Logger LOG = org.apache.log4j.Logger.getLogger(AlkisUtils.class);
+
+    public static final String PRODUCT_ACTION_TAG_BESTANDSNACHWEIS_NRW =
+        "custom.alkis.product.bestandsnachweis_nrw@WUNDA_BLAU";
+    public static final String PRODUCT_ACTION_TAG_BESTANDSNACHWEIS_KOM =
+        "custom.alkis.product.bestandsnachweis_kom@WUNDA_BLAU";
+    public static final String PRODUCT_ACTION_TAG_BESTANDSNACHWEIS_KOM_INTERN =
+        "custom.alkis.product.bestandsnachweis_kom_intern@WUNDA_BLAU";
+    public static final String PRODUCT_ACTION_TAG_BESTANDSNACHWEIS_STICHSTAGSBEZOGEN_NRW =
+        "custom.alkis.product.bestandsnachweis_stichtagsbezogen_nrw@WUNDA_BLAU";
+    public static final String PRODUCT_ACTION_TAG_GRUNDSTUECKSNACHWEIS_NRW =
+        "custom.alkis.product.grundstuecksnachweis_nrw@WUNDA_BLAU";
+    public static final String PRODUCT_ACTION_TAG_FLURSTUECKSNACHWEIS =
+        "custom.alkis.product.flurstuecksnachweis@WUNDA_BLAU";
+    public static final String PRODUCT_ACTION_TAG_FLURSTUECKS_EIGENTUMSNACHWEIS_NRW =
+        "custom.alkis.product.flurstuecks_eigentumsnachweis_nrw@WUNDA_BLAU";
+    public static final String PRODUCT_ACTION_TAG_FLURSTUECKS_EIGENTUMSNACHWEIS_KOM =
+        "custom.alkis.product.flurstuecks_eigentumsnachweis_kom@WUNDA_BLAU";
+    public static final String PRODUCT_ACTION_TAG_FLURSTUECKS_EIGENTUMSNACHWEIS_KOM_INTERN =
+        "custom.alkis.product.flurstuecks_eigentumsnachweis_kom_intern@WUNDA_BLAU";
+    public static final String PRODUCT_ACTION_TAG_KARTE = "custom.alkis.product.karte@WUNDA_BLAU";
+    public static final String PRODUCT_ACTION_TAG_BAULASTBESCHEINIGUNG_ENABLED =
+        "baulast.report.bescheinigung_enabled@WUNDA_BLAU";
+    public static final String PRODUCT_ACTION_TAG_BAULASTBESCHEINIGUNG_DISABLED =
+        "baulast.report.bescheinigung_disabled@WUNDA_BLAU";
+
+    public static final AlkisProducts PRODUCTS;
     public static final String ALKIS_HTML_PRODUCTS_ENABLED = "custom.alkis.products.html.enabled";
     public static final String ALKIS_SOAP_OVER_CSA = "alkisSoapTunnelAction";
-    static final ObjectMapper mapper = new ObjectMapper();
-    static Buchungsblattbezirke buchungsblattbezirke;
+    public static final String ALKIS_EIGENTUEMER = "custom.alkis.buchungsblatt@WUNDA_BLAU";
+    static final Buchungsblattbezirke BUCHUNGSBLATTBEZIRKE;
 
     static {
+        Buchungsblattbezirke buchungsblattbezirke = null;
         try {
-            buchungsblattbezirke = mapper.readValue(Buchungsblattbezirke.class.getResourceAsStream(
-                        "/de/cismet/cids/custom/wunda_blau/res/alkis/buchungsblattbezirke.json"),
-                    Buchungsblattbezirke.class);
-        } catch (Exception ex) {
-            log.error("Problem while reading the Buchungsblattbezirke.", ex);
+            final Object ret = SessionManager.getSession()
+                        .getConnection()
+                        .executeTask(SessionManager.getSession().getUser(),
+                            GetServerResourceServerAction.TASK_NAME,
+                            "WUNDA_BLAU",
+                            WundaBlauServerResources.ALKIS_BUCHUNTSBLATTBEZIRKE_JSON.getValue());
+            if (ret instanceof Exception) {
+                throw (Exception)ret;
+            }
+            final ObjectMapper mapper = new ObjectMapper();
+            buchungsblattbezirke = mapper.readValue((String)ret, Buchungsblattbezirke.class);
+        } catch (final Exception ex) {
+            LOG.error("Problem while reading the Buchungsblattbezirke.", ex);
             buchungsblattbezirke = new Buchungsblattbezirke();
         }
+        BUCHUNGSBLATTBEZIRKE = buchungsblattbezirke;
+
+        AlkisProducts alkisProducts = null;
+        try {
+            final Properties productsProperties = new Properties();
+            final Object productsRet = SessionManager.getSession()
+                        .getConnection()
+                        .executeTask(SessionManager.getSession().getUser(),
+                            GetServerResourceServerAction.TASK_NAME,
+                            "WUNDA_BLAU",
+                            WundaBlauServerResources.ALKIS_PRODUCTS_PROPERTIES.getValue());
+            if (productsRet instanceof Exception) {
+                throw new Exception("error while loading server resource "
+                            + WundaBlauServerResources.ALKIS_PRODUCTS_PROPERTIES,
+                    (Exception)productsRet);
+            }
+            productsProperties.load(new StringReader((String)productsRet));
+
+            final Properties formatsProperties = new Properties();
+            final Object formatsRet = SessionManager.getSession()
+                        .getConnection()
+                        .executeTask(SessionManager.getSession().getUser(),
+                            GetServerResourceServerAction.TASK_NAME,
+                            "WUNDA_BLAU",
+                            WundaBlauServerResources.ALKIS_FORMATS_PROPERTIES.getValue());
+            if (formatsRet instanceof Exception) {
+                throw new Exception("error while loading server resource "
+                            + WundaBlauServerResources.ALKIS_FORMATS_PROPERTIES,
+                    (Exception)formatsRet);
+            }
+            formatsProperties.load(new StringReader((String)formatsRet));
+
+            final Object beschreibungRet = SessionManager.getSession()
+                        .getConnection()
+                        .executeTask(SessionManager.getSession().getUser(),
+                            GetServerResourceServerAction.TASK_NAME,
+                            "WUNDA_BLAU",
+                            WundaBlauServerResources.ALKIS_PRODUKTBESCHREIBUNG_XML.getValue());
+            if (beschreibungRet instanceof Exception) {
+                throw new Exception("error while loading server resource "
+                            + WundaBlauServerResources.ALKIS_PRODUKTBESCHREIBUNG_XML.getValue(),
+                    (Exception)beschreibungRet);
+            }
+
+            alkisProducts = new AlkisProducts(
+                    AlkisConstants.COMMONS,
+                    productsProperties,
+                    formatsProperties,
+                    (String)beschreibungRet);
+        } catch (final Exception ex) {
+            LOG.error("Problem while creating the AlkisProducts.", ex);
+        }
+        PRODUCTS = alkisProducts;
     }
+
+    public static final String ADRESS_HERKUNFT_KATASTERAMT = "Katasteramt";
+    public static final String ADRESS_HERKUNFT_GRUNDBUCHAMT = "Grundbuchamt";
 
     //~ Methods ----------------------------------------------------------------
 
@@ -138,11 +214,11 @@ public class AlkisUtils {
     public static String getBuchungsblattbezirkFromBuchungsblattnummer(final String buchungsblattnummer) {
         try {
             final String bezirksNr = buchungsblattnummer.substring(0, buchungsblattnummer.indexOf("-"));
-            final String bezirksname = buchungsblattbezirke.getDistrictNamesMap().get(bezirksNr);
+            final String bezirksname = BUCHUNGSBLATTBEZIRKE.getDistrictNamesMap().get(bezirksNr);
             final StringBuffer b = new StringBuffer(bezirksname).append(" (").append(bezirksNr).append(')');
             return b.toString();
         } catch (Exception e) {
-            log.error("Error in getBuchungsblattbezirkFromBuchungsblattnummer(" + buchungsblattnummer + ")", e);
+            LOG.error("Error in getBuchungsblattbezirkFromBuchungsblattnummer(" + buchungsblattnummer + ")", e);
             return null;
         }
     }
@@ -212,6 +288,7 @@ public class AlkisUtils {
     public static String addressToString(final Address address) {
         if (address != null) {
             final StringBuilder addressStringBuilder = new StringBuilder();
+            addressStringBuilder.append(getAddressBoldOpenTag(address));
             if (address.getStreet() != null) {
                 addressStringBuilder.append(address.getStreet()).append(" ");
             }
@@ -230,7 +307,90 @@ public class AlkisUtils {
             if (addressStringBuilder.length() > 0) {
                 addressStringBuilder.append(AlkisConstants.NEWLINE);
             }
+            addressStringBuilder.append(getAdressPostfix(address));
+            addressStringBuilder.append(AlkisConstants.NEWLINE);
+            addressStringBuilder.append(getAddressBoldCloseTag(address));
             return addressStringBuilder.toString();
+        } else {
+            return "";
+        }
+    }
+
+    /**
+     * DOCUMENT ME!
+     *
+     * @param   usageKey  DOCUMENT ME!
+     *
+     * @return  DOCUMENT ME!
+     *
+     * @throws  ConnectionException  DOCUMENT ME!
+     */
+    public static String getFertigungsVermerk(final String usageKey) throws ConnectionException {
+        final String fertigungsVermerk;
+        final String currentUsageKey = (BillingPopup.getInstance().getCurrentUsage() != null)
+            ? BillingPopup.getInstance().getCurrentUsage().getKey() : null;
+        if ((usageKey == null) || (usageKey.equals(currentUsageKey))) {
+            fertigungsVermerk = SessionManager.getConnection()
+                        .getConfigAttr(
+                                SessionManager.getSession().getUser(),
+                                "custom.alkis.fertigungsVermerk@WUNDA_BLAU");
+        } else {
+            fertigungsVermerk = null;
+        }
+        return fertigungsVermerk;
+    }
+
+    /**
+     * DOCUMENT ME!
+     *
+     * @param   address  DOCUMENT ME!
+     *
+     * @return  DOCUMENT ME!
+     */
+    private static String getAdressPostfix(final Address address) {
+        if ((address.getHerkunftAdress() != null) && address.getHerkunftAdress().equals(ADRESS_HERKUNFT_KATASTERAMT)) {
+            return java.util.ResourceBundle.getBundle("de/cismet/cids/custom/wunda_blau/res/alkis/AdressPostfixStrings")
+                        .getString("kataster");
+        } else if ((address.getHerkunftAdress() != null)
+                    && address.getHerkunftAdress().equals(ADRESS_HERKUNFT_GRUNDBUCHAMT)) {
+            return java.util.ResourceBundle.getBundle("de/cismet/cids/custom/wunda_blau/res/alkis/AdressPostfixStrings")
+                        .getString("grundbuch");
+        } else {
+            String herkunft = address.getHerkunftAdress();
+            if (herkunft == null) {
+                herkunft = "-";
+            }
+            return String.format(java.util.ResourceBundle.getBundle(
+                        "de/cismet/cids/custom/wunda_blau/res/alkis/AdressPostfixStrings").getString("else"),
+                    herkunft);
+        }
+    }
+
+    /**
+     * DOCUMENT ME!
+     *
+     * @param   address  DOCUMENT ME!
+     *
+     * @return  DOCUMENT ME!
+     */
+    private static String getAddressBoldOpenTag(final Address address) {
+        if ((address.getHerkunftAdress() != null) && address.getHerkunftAdress().equals(ADRESS_HERKUNFT_KATASTERAMT)) {
+            return "<b>";
+        } else {
+            return "";
+        }
+    }
+
+    /**
+     * DOCUMENT ME!
+     *
+     * @param   address  DOCUMENT ME!
+     *
+     * @return  DOCUMENT ME!
+     */
+    private static String getAddressBoldCloseTag(final Address address) {
+        if ((address.getHerkunftAdress() != null) && address.getHerkunftAdress().equals(ADRESS_HERKUNFT_KATASTERAMT)) {
+            return "</b>";
         } else {
             return "";
         }
@@ -263,7 +423,7 @@ public class AlkisUtils {
      */
     public static LandParcel[] getLandparcelFromBuchungsstelle(final Buchungsstelle buchungsstelle) {
         if ((buchungsstelle.getBuchungsstellen() == null) && (buchungsstelle.getLandParcel() == null)) {
-            log.warn("getLandparcelFromBuchungsstelle returns null. Problem on landparcel with number:"
+            LOG.warn("getLandparcelFromBuchungsstelle returns null. Problem on landparcel with number:"
                         + buchungsstelle.getSequentialNumber());
             return new LandParcel[0];
         } else if (buchungsstelle.getBuchungsstellen() == null) {
@@ -372,11 +532,9 @@ public class AlkisUtils {
     public static String arrayToSeparatedString(final String[] strings, final String separator) {
         if (strings != null) {
             final StringBuilder result = new StringBuilder();
-            for (int i = 0; i < strings.length; /**
-                                                 * incremented in loop*
-                                                 */) {
+            for (int i = 0; i < strings.length; i++) {
                 result.append(strings[i]);
-                if (++i < strings.length) {
+                if ((i + 1) < strings.length) {
                     result.append(separator);
                 }
             }
@@ -443,7 +601,17 @@ public class AlkisUtils {
             final Address[] addresses = owner.getAddresses();
             if (addresses != null) {
                 for (final Address address : addresses) {
-                    if (address != null) {
+                    if ((address != null) && (address.getHerkunftAdress() != null)
+                                && address.getHerkunftAdress().equals(ADRESS_HERKUNFT_KATASTERAMT)) {
+                        ownerStringBuilder.append("<tr><td></td>").append(spacing).append("<td>");
+                        ownerStringBuilder.append(addressToString(address)).append(AlkisConstants.NEWLINE);
+                        ownerStringBuilder.append("</td><td></td><td></td></tr>");
+                    }
+                }
+                for (final Address address : addresses) {
+                    if ((address != null)
+                                && ((address.getHerkunftAdress() == null)
+                                    || (!address.getHerkunftAdress().equals(ADRESS_HERKUNFT_KATASTERAMT)))) {
                         ownerStringBuilder.append("<tr><td></td>").append(spacing).append("<td>");
                         ownerStringBuilder.append(addressToString(address)).append(AlkisConstants.NEWLINE);
                         ownerStringBuilder.append("</td><td></td><td></td></tr>");
@@ -643,7 +811,7 @@ public class AlkisUtils {
                         .getConfigAttr(SessionManager.getSession().getUser(), "navigator.alkis.print@WUNDA_BLAU")
                         != null;
         } catch (ConnectionException ex) {
-            log.error("Could not validate action tag for Alkis Print Dialog!", ex);
+            LOG.error("Could not validate action tag for Alkis Print Dialog!", ex);
         }
         return false;
     }
@@ -659,7 +827,7 @@ public class AlkisUtils {
                         .getConfigAttr(SessionManager.getSession().getUser(), "navigator.alkis.products@WUNDA_BLAU")
                         != null;
         } catch (ConnectionException ex) {
-            log.error("Could not validate action tag for Alkis Products!", ex);
+            LOG.error("Could not validate action tag for Alkis Products!", ex);
         }
         return false;
     }
@@ -669,13 +837,13 @@ public class AlkisUtils {
      *
      * @return  DOCUMENT ME!
      */
-    public static boolean validateUserHasAlkisBuchungsblattAccess() {
+    public static boolean validateUserHasEigentuemerAccess() {
         try {
             return SessionManager.getConnection()
-                        .getConfigAttr(SessionManager.getSession().getUser(), "custom.alkis.buchungsblatt@WUNDA_BLAU")
+                        .getConfigAttr(SessionManager.getSession().getUser(), ALKIS_EIGENTUEMER)
                         != null;
         } catch (ConnectionException ex) {
-            log.error("Could not validate action tag for Alkis Buchungsblatt!", ex);
+            LOG.error("Could not validate action tag for Alkis Buchungsblatt!", ex);
         }
         return false;
     }
@@ -691,7 +859,7 @@ public class AlkisUtils {
                         .getConfigAttr(SessionManager.getSession().getUser(), ALKIS_HTML_PRODUCTS_ENABLED)
                         != null;
         } catch (ConnectionException ex) {
-            log.error("Could not validate action tag for Alkis HTML Products!", ex);
+            LOG.error("Could not validate action tag for Alkis HTML Products!", ex);
         }
         return false;
     }
@@ -709,7 +877,7 @@ public class AlkisUtils {
                                 + ALKIS_SOAP_OVER_CSA)
                         != null;
         } catch (ConnectionException ex) {
-            log.error("Could not validate action tag for Alkis SOAP CSA Calls!", ex);
+            LOG.error("Could not validate action tag for Alkis SOAP CSA Calls!", ex);
         }
         return false;
     }
@@ -761,5 +929,136 @@ public class AlkisUtils {
                             body,
                             buchungsblattCodeSAP);
         return result;
+    }
+
+    /**
+     * DOCUMENT ME!
+     *
+     * @param   buchungsblattCode  DOCUMENT ME!
+     *
+     * @return  DOCUMENT ME!
+     */
+    public static String fixBuchungslattCode(final String buchungsblattCode) {
+        if (buchungsblattCode != null) {
+            final StringBuffer buchungsblattCodeSB = new StringBuffer(buchungsblattCode);
+            // Fix SICAD-API-strangeness...
+            while (buchungsblattCodeSB.length() < 14) {
+                buchungsblattCodeSB.append(" ");
+            }
+            return buchungsblattCodeSB.toString();
+        } else {
+            return "";
+        }
+    }
+
+    /**
+     * DOCUMENT ME!
+     *
+     * @param   product  DOCUMENT ME!
+     *
+     * @return  DOCUMENT ME!
+     */
+    public static String getActionTag(final String product) {
+        final String actionTag;
+        if (AlkisUtils.PRODUCTS.FLURSTUECKSNACHWEIS_PDF.equals(product)
+                    || AlkisUtils.PRODUCTS.FLURSTUECKSNACHWEIS_HTML.equals(product)) {
+            actionTag = PRODUCT_ACTION_TAG_FLURSTUECKSNACHWEIS;
+        } else if (AlkisUtils.PRODUCTS.FLURSTUECKS_UND_EIGENTUMSNACHWEIS_NRW_PDF.equals(product)
+                    || AlkisUtils.PRODUCTS.FLURSTUECKS_UND_EIGENTUMSNACHWEIS_NRW_HTML.equals(product)) {
+            actionTag = PRODUCT_ACTION_TAG_FLURSTUECKS_EIGENTUMSNACHWEIS_NRW;
+        } else if (AlkisUtils.PRODUCTS.FLURSTUECKS_UND_EIGENTUMSNACHWEIS_KOMMUNAL_INTERN_PDF.equals(product)
+                    || AlkisUtils.PRODUCTS.FLURSTUECKS_UND_EIGENTUMSNACHWEIS_KOMMUNAL_INTERN_HTML.equals(product)) {
+            actionTag = PRODUCT_ACTION_TAG_FLURSTUECKS_EIGENTUMSNACHWEIS_KOM_INTERN;
+        } else if (AlkisUtils.PRODUCTS.FLURSTUECKS_UND_EIGENTUMSNACHWEIS_KOMMUNAL_PDF.equals(product)
+                    || AlkisUtils.PRODUCTS.FLURSTUECKS_UND_EIGENTUMSNACHWEIS_KOMMUNAL_HTML.equals(product)) {
+            actionTag = PRODUCT_ACTION_TAG_FLURSTUECKS_EIGENTUMSNACHWEIS_KOM;
+        } else if (AlkisUtils.PRODUCTS.BESTANDSNACHWEIS_KOMMUNAL_PDF.equals(product)
+                    || AlkisUtils.PRODUCTS.BESTANDSNACHWEIS_KOMMUNAL_HTML.equals(product)) {
+            actionTag = PRODUCT_ACTION_TAG_BESTANDSNACHWEIS_KOM;
+        } else if (AlkisUtils.PRODUCTS.BESTANDSNACHWEIS_KOMMUNAL_INTERN_PDF.equals(product)
+                    || AlkisUtils.PRODUCTS.BESTANDSNACHWEIS_KOMMUNAL_INTERN_HTML.equals(product)) {
+            actionTag = PRODUCT_ACTION_TAG_BESTANDSNACHWEIS_KOM_INTERN;
+        } else if (AlkisUtils.PRODUCTS.BESTANDSNACHWEIS_NRW_PDF.equals(product)
+                    || AlkisUtils.PRODUCTS.BESTANDSNACHWEIS_NRW_HTML.equals(product)) {
+            actionTag = PRODUCT_ACTION_TAG_BESTANDSNACHWEIS_NRW;
+        } else if (AlkisUtils.PRODUCTS.BESTANDSNACHWEIS_STICHTAGSBEZOGEN_NRW_PDF.equals(product)) {
+            actionTag = PRODUCT_ACTION_TAG_BESTANDSNACHWEIS_STICHSTAGSBEZOGEN_NRW;
+        } else if (AlkisUtils.PRODUCTS.GRUNDSTUECKSNACHWEIS_NRW_PDF.equals(product)
+                    || AlkisUtils.PRODUCTS.GRUNDSTUECKSNACHWEIS_NRW_HTML.equals(product)) {
+            actionTag = PRODUCT_ACTION_TAG_GRUNDSTUECKSNACHWEIS_NRW;
+        } else {
+            actionTag = "3wbgW§$%Q&/"; // unknown product, prevent NPE while checking action tag with null
+        }
+        return actionTag;
+    }
+
+    /**
+     * DOCUMENT ME!
+     *
+     * @param   product  DOCUMENT ME!
+     *
+     * @return  DOCUMENT ME!
+     */
+    public static String getProductName(final String product) {
+        final String downloadTitle;
+        if (PRODUCTS.FLURSTUECKSNACHWEIS_PDF.equals(product)
+                    || PRODUCTS.FLURSTUECKSNACHWEIS_HTML.equals(product)) {
+            downloadTitle = "Flurstücksnachweis";
+        } else if (PRODUCTS.FLURSTUECKS_UND_EIGENTUMSNACHWEIS_NRW_PDF.equals(product)
+                    || PRODUCTS.FLURSTUECKS_UND_EIGENTUMSNACHWEIS_NRW_HTML.equals(product)) {
+            downloadTitle = "Flurstücks- und Eigentumsnachweis NRW";
+        } else if (PRODUCTS.FLURSTUECKS_UND_EIGENTUMSNACHWEIS_KOMMUNAL_PDF.equals(product)
+                    || PRODUCTS.FLURSTUECKS_UND_EIGENTUMSNACHWEIS_KOMMUNAL_HTML.equals(product)) {
+            downloadTitle = "Flurstücks- und Eigentumsnachweis (kommunal)";
+        } else if (PRODUCTS.FLURSTUECKS_UND_EIGENTUMSNACHWEIS_KOMMUNAL_INTERN_PDF.equals(product)
+                    || PRODUCTS.FLURSTUECKS_UND_EIGENTUMSNACHWEIS_KOMMUNAL_INTERN_HTML.equals(product)) {
+            downloadTitle = "Flurstücks- und Eigentumsnachweis (kommunal, intern)";
+        } else if (PRODUCTS.BESTANDSNACHWEIS_NRW_PDF.equals(product)
+                    || PRODUCTS.BESTANDSNACHWEIS_NRW_HTML.equals(product)) {
+            downloadTitle = "Bestandsnachweis (NRW)";
+        } else if (PRODUCTS.BESTANDSNACHWEIS_STICHTAGSBEZOGEN_NRW_PDF.equals(product)) {
+            downloadTitle = "Bestandsnachweis stichtagsbezogen (NRW)";
+        } else if (PRODUCTS.BESTANDSNACHWEIS_KOMMUNAL_PDF.equals(product)
+                    || PRODUCTS.BESTANDSNACHWEIS_KOMMUNAL_HTML.equals(product)) {
+            downloadTitle = "Bestandsnachweis (kommunal)";
+        } else if (PRODUCTS.BESTANDSNACHWEIS_KOMMUNAL_INTERN_PDF.equals(product)
+                    || PRODUCTS.BESTANDSNACHWEIS_KOMMUNAL_INTERN_HTML.equals(product)) {
+            downloadTitle = "Bestandsnachweis (kommunal, intern)";
+        } else if (PRODUCTS.GRUNDSTUECKSNACHWEIS_NRW_PDF.equals(product)
+                    || PRODUCTS.GRUNDSTUECKSNACHWEIS_NRW_HTML.equals(product)) {
+            downloadTitle = "Grundstücksnachweis (NRW)";
+        } else {
+            downloadTitle = null;
+        }
+        return downloadTitle;
+    }
+
+    /**
+     * DOCUMENT ME!
+     *
+     * @param   product  DOCUMENT ME!
+     *
+     * @return  DOCUMENT ME!
+     */
+    public static String getBillingKey(final String product) {
+        final String billingKey;
+        if (PRODUCTS.FLURSTUECKSNACHWEIS_PDF.equals(product)) {
+            billingKey = "fsnw";
+        } else if (PRODUCTS.FLURSTUECKS_UND_EIGENTUMSNACHWEIS_NRW_PDF.equals(product)) {
+            billingKey = "fsuenw";
+        } else if (PRODUCTS.FLURSTUECKS_UND_EIGENTUMSNACHWEIS_KOMMUNAL_PDF.equals(product)) {
+            billingKey = "fsuekom";
+        } else if (PRODUCTS.BESTANDSNACHWEIS_NRW_PDF.equals(product)) {
+            billingKey = "benw";
+        } else if (PRODUCTS.BESTANDSNACHWEIS_STICHTAGSBEZOGEN_NRW_PDF.equals(product)) {
+            billingKey = "bestnw";
+        } else if (PRODUCTS.BESTANDSNACHWEIS_KOMMUNAL_PDF.equals(product)) {
+            billingKey = "bekom";
+        } else if (PRODUCTS.GRUNDSTUECKSNACHWEIS_NRW_PDF.equals(product)) {
+            billingKey = "grnw";
+        } else {
+            billingKey = null;
+        }
+        return billingKey;
     }
 }

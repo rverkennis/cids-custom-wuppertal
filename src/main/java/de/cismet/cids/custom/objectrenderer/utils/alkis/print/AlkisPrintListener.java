@@ -17,7 +17,6 @@ import com.vividsolutions.jts.geom.Point;
 import com.vividsolutions.jts.geom.PrecisionModel;
 import com.vividsolutions.jts.geom.util.AffineTransformation;
 
-import edu.umd.cs.piccolo.event.PBasicInputEventHandler;
 import edu.umd.cs.piccolo.event.PInputEvent;
 
 import java.awt.Color;
@@ -45,7 +44,6 @@ import de.cismet.cismap.commons.gui.piccolo.PFeature;
 import de.cismet.cismap.commons.gui.piccolo.eventlistener.FeatureMoveListener;
 import de.cismet.cismap.commons.interaction.CismapBroker;
 import de.cismet.cismap.commons.tools.PFeatureTools;
-import de.cismet.cismap.commons.util.FormatToRealWordCalculator;
 
 import de.cismet.tools.collections.TypeSafeCollections;
 
@@ -55,7 +53,7 @@ import de.cismet.tools.collections.TypeSafeCollections;
  * @author   stefan
  * @version  $Revision$, $Date$
  */
-public class AlkisPrintListener extends PBasicInputEventHandler {
+public class AlkisPrintListener extends FeatureMoveListener {
 
     //~ Static fields/initializers ---------------------------------------------
 
@@ -75,7 +73,7 @@ public class AlkisPrintListener extends PBasicInputEventHandler {
     private final PropertyChangeListener mapInteractionModeListener;
     private final MappingComponent mappingComponent;
     private final Collection<Feature> printFeatureCollection;
-    private final FeatureMoveListener featureMoveListenerDelegate;
+    // private final FeatureMoveListener featureMoveListenerDelegate;
     private final List<Feature> backupFeature;
     private final List<Feature> backupHoldFeature;
     private final AlkisPrintingSettingsWidget printWidget;
@@ -94,12 +92,13 @@ public class AlkisPrintListener extends PBasicInputEventHandler {
      * @param  printWidget       DOCUMENT ME!
      */
     public AlkisPrintListener(final MappingComponent mappingComponent, final AlkisPrintingSettingsWidget printWidget) {
+        super(mappingComponent);
         this.diagonal = 0d;
         this.cleared = true;
         this.printFeatureCollection = TypeSafeCollections.newArrayList(1);
         this.mappingComponent = mappingComponent;
         this.printWidget = printWidget;
-        this.featureMoveListenerDelegate = new FeatureMoveListener(mappingComponent);
+//        this.featureMoveListenerDelegate = new FeatureMoveListener(mappingComponent);
         this.backupFeature = TypeSafeCollections.newArrayList();
         this.backupHoldFeature = TypeSafeCollections.newArrayList();
         this.oldInteractionMode = "PAN";
@@ -121,34 +120,49 @@ public class AlkisPrintListener extends PBasicInputEventHandler {
 
     /**
      * DOCUMENT ME!
-     *
-     * @param  product              DOCUMENT ME!
-     * @param  geom                 DOCUMENT ME!
-     * @param  findOptimalRotation  DOCUMENT ME!
      */
-    public void init(final AlkisProductDescription product, final Geometry geom, final boolean findOptimalRotation) {
-        // translate from alkis db geom srid to alkis service srid
-        final Geometry serviceConformGeometry = CrsTransformer.transformToGivenCrs(
-                geom,
-                AlkisConstants.COMMONS.SRS_SERVICE);
-        final String currentInteractionMode = mappingComponent.getInteractionMode();
-        final double massstab = Double.parseDouble(product.getMassstab());
-        final double realWorldWidth = FormatToRealWordCalculator.toRealWorldValue(product.getWidth(), massstab);
-        final double realWorldHeight = FormatToRealWordCalculator.toRealWorldValue(product.getHeight(), massstab);
-        if ((massstab != 0) && !mappingComponent.isFixedMapScale()) {
-            mappingComponent.queryServices();
-        }
-        initMapTemplate(product, serviceConformGeometry, findOptimalRotation, realWorldWidth, realWorldHeight);
+    public void init() {
         mappingComponent.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         mappingComponent.setPointerAnnotation(PRINTING_TOOLTIP);
         mappingComponent.setPointerAnnotationVisibility(true);
+        final String currentInteractionMode = mappingComponent.getInteractionMode();
+
         // do not add listener again if we are already in print mode
         if (!MappingComponent.ALKIS_PRINT.equals(currentInteractionMode)) {
             this.oldInteractionMode = currentInteractionMode;
             mappingComponent.addPropertyChangeListener(mapInteractionModeListener);
         }
         mappingComponent.setInteractionMode(MappingComponent.ALKIS_PRINT);
+
         cleared = false;
+        mappingComponent.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        mappingComponent.setPointerAnnotation(PRINTING_TOOLTIP);
+        mappingComponent.setPointerAnnotationVisibility(true);
+    }
+
+    /**
+     * DOCUMENT ME!
+     *
+     * @param  product              DOCUMENT ME!
+     * @param  geom                 DOCUMENT ME!
+     * @param  findOptimalRotation  DOCUMENT ME!
+     */
+    public void refreshPreviewGeometry(final AlkisProductDescription product,
+            final Geometry geom,
+            final boolean findOptimalRotation) {
+        if (geom != null) {
+            // translate from alkis db geom srid to alkis service srid
+            final Geometry serviceConformGeometry = CrsTransformer.transformToGivenCrs(
+                    geom,
+                    AlkisConstants.COMMONS.SRS_SERVICE);
+            final double massstab = Double.parseDouble(product.getMassstab());
+            final double realWorldWidth = product.getWidth() / 1000.0d * massstab;
+            final double realWorldHeight = product.getHeight() / 1000.0d * massstab;
+            if ((massstab != 0) && !mappingComponent.isFixedMapScale()) {
+                mappingComponent.queryServices();
+            }
+            initMapTemplate(product, serviceConformGeometry, findOptimalRotation, realWorldWidth, realWorldHeight);
+        }
     }
 
     /**
@@ -191,7 +205,6 @@ public class AlkisPrintListener extends PBasicInputEventHandler {
 
         // Check for Stempelfeld
         if (product.getStempelfeldInfo() != null) {
-            log.fatal(product.getStempelfeldInfo());
             // coords[0] lower left
             final double fromX = product.getStempelfeldInfo().getFromX();
             final double fromY = product.getStempelfeldInfo().getFromY();
@@ -245,11 +258,12 @@ public class AlkisPrintListener extends PBasicInputEventHandler {
             // rotate to optimal angle
             rotation = AffineTransformation.rotationInstance(angle, centerX, centerY);
             outerRing = (LinearRing)rotation.transform(outerRing);
-            innerRings[0] = (LinearRing)rotation.transform(innerRings[0]);
+            if (innerRings != null) {
+                innerRings[0] = (LinearRing)rotation.transform(innerRings[0]);
+            }
         }
-
         final Geometry polygon = GEOMETRY_FACTORY.createPolygon(outerRing, innerRings);
-
+        final Feature oldPrintFeature = printTemplateStyledFeature;
         printTemplateStyledFeature = new PrintFeature();
         printTemplateStyledFeature.setFillingPaint(BORDER_COLOR);
         printTemplateStyledFeature.setCanBeSelected(true);
@@ -257,27 +271,20 @@ public class AlkisPrintListener extends PBasicInputEventHandler {
         printTemplateStyledFeature.setGeometry(polygon);
         printFeatureCollection.clear();
         printFeatureCollection.add(printTemplateStyledFeature);
-        oldOverlappingCheck = CismapBroker.getInstance().isCheckForOverlappingGeometriesAfterFeatureRotation();
-        CismapBroker.getInstance().setCheckForOverlappingGeometriesAfterFeatureRotation(false);
         diagonal = Math.sqrt((polygonBB.getWidth() * polygonBB.getWidth())
                         + (polygonBB.getHeight() * polygonBB.getHeight()));
         // TODO: bug, buggy bug: selection is no more done if we call hold() :-/
+        if (oldPrintFeature != null) {
+            mapFeatureCol.unholdFeature(oldPrintFeature);
+            mapFeatureCol.removeFeature(oldPrintFeature);
+        } else {
+            oldOverlappingCheck = CismapBroker.getInstance().isCheckForOverlappingGeometriesAfterFeatureRotation();
+            CismapBroker.getInstance().setCheckForOverlappingGeometriesAfterFeatureRotation(false);
+        }
         mapFeatureCol.holdFeature(printTemplateStyledFeature);
         mapFeatureCol.addFeature(printTemplateStyledFeature);
         final PFeature printPFeature = mappingComponent.getPFeatureHM().get(printTemplateStyledFeature);
-        printPFeature.addPropertyChangeListener(new PropertyChangeListener() {
 
-                @Override
-                public void propertyChange(final PropertyChangeEvent evt) {
-                    if ("parent".equals(evt.getPropertyName()) && (evt.getNewValue() != null)) {
-                        gotoPrintAreaWithBuffer();
-//                        mappingComponent.zoomToAFeatureCollection(printFeatureCollection, false, false);
-                    } else if ("visible".equals(evt.getPropertyName()) && (evt.getNewValue() == null)) {
-                        cleanUpAndRestoreFeatures();
-                    }
-                }
-            });
-//        mappingComponent.zoomToFeatureCollection();
         gotoPrintAreaWithBuffer();
         mapFeatureCol.select(printTemplateStyledFeature);
         mappingComponent.setHandleInteractionMode(MappingComponent.ROTATE_POLYGON);
@@ -303,13 +310,6 @@ public class AlkisPrintListener extends PBasicInputEventHandler {
         mappingComponent.gotoBoundingBoxWithHistory(gotoBB);
     }
 
-    @Override
-    public void mouseReleased(final PInputEvent e) {
-        super.mouseReleased(e);
-        featureMoveListenerDelegate.mouseReleased(e);
-//        mappingComponent.zoomToAFeatureCollection(printFeatureCollection, false, false);
-    }
-
     /**
      * DOCUMENT ME!
      *
@@ -329,27 +329,6 @@ public class AlkisPrintListener extends PBasicInputEventHandler {
     }
 
     @Override
-    public void mousePressed(final PInputEvent e) {
-        ensureSelection(e);
-        featureMoveListenerDelegate.mousePressed(e);
-    }
-
-    @Override
-    public void mouseMoved(final PInputEvent event) {
-        // NOP
-    }
-
-    @Override
-    public void mouseDragged(final PInputEvent e) {
-        featureMoveListenerDelegate.mouseDragged(e);
-    }
-
-    @Override
-    public void mouseWheelRotated(final PInputEvent event) {
-        // NOP
-    }
-
-    @Override
     public void mouseClicked(final PInputEvent event) {
         super.mouseClicked(event);
         if ((event.getClickCount() > 1) && event.isLeftMouseButton()) {
@@ -360,15 +339,24 @@ public class AlkisPrintListener extends PBasicInputEventHandler {
         }
     }
 
+    @Override
+    public void mouseReleased(final PInputEvent e) {
+        super.mouseReleased(e);
+        gotoPrintAreaWithBuffer();
+    }
+
     /**
      * DOCUMENT ME!
      */
-    private void cleanUpAndRestoreFeatures() {
+    public void cleanUpAndRestoreFeatures() {
         if (!cleared) {
             mappingComponent.removePropertyChangeListener(mapInteractionModeListener);
-            final FeatureCollection mapFeatureCollection = mappingComponent.getFeatureCollection();
-            mapFeatureCollection.unholdFeature(printTemplateStyledFeature);
-            mapFeatureCollection.removeFeature(printTemplateStyledFeature);
+            if (printTemplateStyledFeature != null) {
+                final FeatureCollection mapFeatureCollection = mappingComponent.getFeatureCollection();
+                mapFeatureCollection.unholdFeature(printTemplateStyledFeature);
+                mapFeatureCollection.removeFeature(printTemplateStyledFeature);
+                printTemplateStyledFeature = null;
+            }
             if (MappingComponent.ALKIS_PRINT.equals(mappingComponent.getInteractionMode())) {
                 mappingComponent.setInteractionMode(oldInteractionMode);
             }
@@ -383,7 +371,7 @@ public class AlkisPrintListener extends PBasicInputEventHandler {
      * @return  DOCUMENT ME!
      */
     private Point getTemplateCenter() {
-        return printTemplateStyledFeature.getGeometry().getCentroid();
+        return printTemplateStyledFeature.getGeometry().getEnvelope().getCentroid();
     }
 
     /**

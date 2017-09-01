@@ -51,7 +51,7 @@ public class NasStartupHook implements StartupHook {
 
     @Override
     public void applicationStarted() {
-        SwingUtilities.invokeLater(new Runnable() {
+        new Thread(new Runnable() {
 
                 @Override
                 public void run() {
@@ -94,11 +94,12 @@ public class NasStartupHook implements StartupHook {
                             final NASDownload download = new NASDownload(
                                     orderId,
                                     pInfo.isIsSplittet(),
+                                    pInfo.isDxf(),
                                     pInfo.getRequestName());
                             DownloadManager.instance().add(download);
                         }
                     }
                 }
-            });
+            }).start();
     }
 }

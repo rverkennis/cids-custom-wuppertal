@@ -86,7 +86,7 @@ public class PointNumberReservationToolbarComponentProvider implements ToolbarCo
             return SessionManager.getConnection()
                         .getConfigAttr(SessionManager.getSession().getUser(), "csa://pointNumberReservation")
                         != null;
-        } catch (ConnectionException ex) {
+        } catch (final Exception ex) {
             LOG.error("Could not validate action tag for PunktnummernReservierung!", ex);
         }
         return false;
@@ -123,7 +123,7 @@ public class PointNumberReservationToolbarComponentProvider implements ToolbarCo
                                     final PointNumberDialog dialog = new PointNumberDialog(
                                             StaticSwingTools.getParentFrame(
                                                 CismapBroker.getInstance().getMappingComponent()),
-                                            false);
+                                            true);
                                     StaticSwingTools.showDialog(dialog);
                                 }
                             });

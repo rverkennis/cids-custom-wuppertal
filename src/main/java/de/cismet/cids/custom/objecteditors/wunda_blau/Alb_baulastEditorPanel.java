@@ -17,6 +17,7 @@
 package de.cismet.cids.custom.objecteditors.wunda_blau;
 
 import Sirius.navigator.connection.SessionManager;
+import Sirius.navigator.exception.ConnectionException;
 import Sirius.navigator.ui.ComponentRegistry;
 
 import Sirius.server.middleware.types.AbstractAttributeRepresentationFormater;
@@ -32,6 +33,7 @@ import org.jdesktop.swingx.calendar.DatePickerFormatter;
 import org.jfree.util.Log;
 
 import org.openide.util.Exceptions;
+import org.openide.util.WeakListeners;
 
 import java.awt.Color;
 import java.awt.Component;
@@ -50,8 +52,8 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.GregorianCalendar;
-import java.util.HashMap;
 import java.util.List;
+import java.util.WeakHashMap;
 import java.util.concurrent.ExecutionException;
 
 import javax.swing.ComboBoxModel;
@@ -71,6 +73,7 @@ import javax.swing.text.DefaultFormatterFactory;
 import de.cismet.cids.custom.objectrenderer.utils.AlphanumComparator;
 import de.cismet.cids.custom.objectrenderer.utils.CidsBeanSupport;
 import de.cismet.cids.custom.objectrenderer.utils.ObjectRendererUtils;
+import de.cismet.cids.custom.wunda_blau.search.server.BaulastArtLightweightSearch;
 
 import de.cismet.cids.dynamics.CidsBean;
 import de.cismet.cids.dynamics.DisposableCidsBeanStore;
@@ -96,6 +99,7 @@ public class Alb_baulastEditorPanel extends javax.swing.JPanel implements Dispos
     public static final String ATAG_FINAL_CHECK = "navigator.baulasten.final_check"; // NOI18N
     private static final Logger LOG = Logger.getLogger(Alb_baulastEditorPanel.class);
     private static final ComboBoxModel waitModel = new DefaultComboBoxModel(new String[] { "Wird geladen..." });
+    private static final java.util.Date BAULAST_LOWER_DATE_BOUND = new GregorianCalendar(1960, 0, 1).getTime();
     private static final Converter<java.sql.Date, String> DATE_TO_STRING = new Converter<Date, String>() {
 
             @Override
@@ -118,7 +122,7 @@ public class Alb_baulastEditorPanel extends javax.swing.JPanel implements Dispos
 
     //~ Instance fields --------------------------------------------------------
 
-    final PropertyChangeListener listener = new CidsBeanListener();
+    PropertyChangeListener listener;
     private CidsBean cidsBean;
     private Collection<MetaObject> allSelectedObjects;
     private final boolean editable;
@@ -130,7 +134,7 @@ public class Alb_baulastEditorPanel extends javax.swing.JPanel implements Dispos
     private Object oldGeprueft_Von;
     private Object oldPruefdatum;
     private Object oldPruefkommentar;
-    private final HashMap<CidsBean, String> propStringMap = new HashMap<CidsBean, String>();
+    private final WeakHashMap<CidsBean, String> propStringMap = new WeakHashMap<CidsBean, String>();
     // Variables declaration - do not modify//GEN-BEGIN:variables
     private de.cismet.cids.editors.DefaultBindableDateChooser bdcBefristungsdatum;
     private de.cismet.cids.editors.DefaultBindableDateChooser bdcEintragungsdatum;
@@ -203,6 +207,15 @@ public class Alb_baulastEditorPanel extends javax.swing.JPanel implements Dispos
         this.editableComponents = new ArrayList<JComponent>();
         initComponents();
         initEditableComponents();
+//        final Collection<BaulastenReportGenerator.Type> items = new ArrayList<BaulastenReportGenerator.Type>();
+//        items.add(BaulastenReportGenerator.Type.TEXTBLATT);
+//        items.add(BaulastenReportGenerator.Type.TEXTBLATT_PLAN);
+//        items.add(BaulastenReportGenerator.Type.TEXTBLATT_PLAN_RASTER);
+//        final boolean enabled = BillingPopup.isBillingAllowed() && !items.isEmpty();
+//
+//        cmbType.setModel(new DefaultComboBoxModel(items.toArray(new BaulastenReportGenerator.Type[0])));
+//        cmbType.setEnabled(enabled);
+
         fsDialoge = new FlurstueckSelectionDialoge() {
 
                 @Override
@@ -221,6 +234,16 @@ public class Alb_baulastEditorPanel extends javax.swing.JPanel implements Dispos
         lstFlurstueckeBeguenstigt.setCellRenderer(new HyperlinkStyleExistingLandparcelCellRenderer());
         lstFlurstueckeBelastet.setCellRenderer(new HyperlinkStyleExistingLandparcelCellRenderer());
         changeAutocompleteBehaviourOfDatePickers();
+
+        bdcEintragungsdatum.getMonthView().setLowerBound(BAULAST_LOWER_DATE_BOUND);
+        bdcLoeschungsdatum.getMonthView().setLowerBound(BAULAST_LOWER_DATE_BOUND);
+        bdcGeschlossenAm.getMonthView().setLowerBound(BAULAST_LOWER_DATE_BOUND);
+        bdcBefristungsdatum.getMonthView().setLowerBound(BAULAST_LOWER_DATE_BOUND);
+
+        bdcEintragungsdatum.getMonthView().setUpperBound(new java.util.Date());
+        bdcGeschlossenAm.getMonthView().setUpperBound(new java.util.Date());
+        bdcLoeschungsdatum.getMonthView().setUpperBound(new java.util.Date());
+        bdcBefristungsdatum.getMonthView().setUpperBound(new GregorianCalendar(9999, 11, 31).getTime());
     }
 
     //~ Methods ----------------------------------------------------------------
@@ -622,6 +645,14 @@ public class Alb_baulastEditorPanel extends javax.swing.JPanel implements Dispos
 
         lblDescBefristungsdatum.setText("Befristungsdatum:");
 
+        binding = org.jdesktop.beansbinding.Bindings.createAutoBinding(
+                org.jdesktop.beansbinding.AutoBinding.UpdateStrategy.READ_WRITE,
+                this,
+                org.jdesktop.beansbinding.ELProperty.create("${cidsBean.befristungsdatum}!=null"),
+                lblDescBefristungsdatum,
+                org.jdesktop.beansbinding.BeanProperty.create("opaque"));
+        bindingGroup.addBinding(binding);
+
         gridBagConstraints = new java.awt.GridBagConstraints();
         gridBagConstraints.gridx = 0;
         gridBagConstraints.gridy = 3;
@@ -790,7 +821,7 @@ public class Alb_baulastEditorPanel extends javax.swing.JPanel implements Dispos
         lblDescBaulastart.setText("Arten:");
         gridBagConstraints = new java.awt.GridBagConstraints();
         gridBagConstraints.gridx = 0;
-        gridBagConstraints.gridy = 8;
+        gridBagConstraints.gridy = 6;
         gridBagConstraints.anchor = java.awt.GridBagConstraints.NORTHWEST;
         gridBagConstraints.insets = new java.awt.Insets(5, 5, 5, 5);
         rpInfo.add(lblDescBaulastart, gridBagConstraints);
@@ -811,7 +842,7 @@ public class Alb_baulastEditorPanel extends javax.swing.JPanel implements Dispos
 
         gridBagConstraints = new java.awt.GridBagConstraints();
         gridBagConstraints.gridx = 1;
-        gridBagConstraints.gridy = 8;
+        gridBagConstraints.gridy = 6;
         gridBagConstraints.gridwidth = 5;
         gridBagConstraints.fill = java.awt.GridBagConstraints.BOTH;
         gridBagConstraints.weightx = 0.1;
@@ -862,7 +893,7 @@ public class Alb_baulastEditorPanel extends javax.swing.JPanel implements Dispos
 
         gridBagConstraints = new java.awt.GridBagConstraints();
         gridBagConstraints.gridx = 6;
-        gridBagConstraints.gridy = 8;
+        gridBagConstraints.gridy = 6;
         gridBagConstraints.insets = new java.awt.Insets(5, 5, 5, 5);
         rpInfo.add(panArtControls, gridBagConstraints);
 
@@ -931,17 +962,24 @@ public class Alb_baulastEditorPanel extends javax.swing.JPanel implements Dispos
      * @return  DOCUMENT ME!
      */
     private MetaObject[] getLWBaulastarten() {
-        return ObjectRendererUtils.getLightweightMetaObjectsForQuery(
-                "alb_baulast_art",
-                "select id,baulast_art from alb_baulast_art order by baulast_art",
-                new String[] { "baulast_art" },
-                new AbstractAttributeRepresentationFormater() {
+        try {
+            final BaulastArtLightweightSearch search = new BaulastArtLightweightSearch();
+            search.setRepresentationFields(new String[] { "baulast_art" });
+            final Collection<LightweightMetaObject> lwmos = SessionManager.getProxy().customServerSearch(search);
+            for (final LightweightMetaObject lwmo : lwmos) {
+                lwmo.setFormater(new AbstractAttributeRepresentationFormater() {
 
-                    @Override
-                    public String getRepresentation() {
-                        return String.valueOf(getAttribute("baulast_art"));
-                    }
-                });
+                        @Override
+                        public String getRepresentation() {
+                            return String.valueOf(getAttribute("baulast_art"));
+                        }
+                    });
+            }
+            return lwmos.toArray(new MetaObject[0]);
+        } catch (final ConnectionException ex) {
+            LOG.error(ex, ex);
+            return null;
+        }
     }
 
     /**
@@ -1204,9 +1242,6 @@ public class Alb_baulastEditorPanel extends javax.swing.JPanel implements Dispos
                 final Collection<MetaObject> selObj = new ArrayList<MetaObject>(1);
                 selObj.add(cidsBean.getMetaObject());
                 setAllSelectedMetaObjects(selObj);
-                if (this.cidsBean != null) {
-                    this.cidsBean.removePropertyChangeListener(listener);
-                }
                 this.cidsBean = cidsBean;
                 List<CidsBean> landParcelCol = CidsBeanSupport.getBeanCollectionFromProperty(
                         cidsBean,
@@ -1232,7 +1267,9 @@ public class Alb_baulastEditorPanel extends javax.swing.JPanel implements Dispos
                                 && propstring.equals(cidsBean.getMetaObject().getPropertyString());
 
                     chkGeprueft.setEnabled(finalCheckEnable);
-                    cidsBean.addPropertyChangeListener(listener);
+                    cidsBean.addPropertyChangeListener(WeakListeners.propertyChange(
+                            listener = new CidsBeanListener(),
+                            cidsBean));
                 } else {
                     final Object geprueftObj = cidsBean.getProperty("geprueft");
                     if ((geprueftObj instanceof Boolean) && ((Boolean)geprueftObj)) {
@@ -1287,12 +1324,10 @@ public class Alb_baulastEditorPanel extends javax.swing.JPanel implements Dispos
      */
     @Override
     public void dispose() {
-        if (cidsBean != null) {
-            cidsBean.removePropertyChangeListener(listener);
-        }
+        bindingGroup.unbind();
+        listener = null;
         dlgAddBaulastArt.dispose();
         fsDialoge.dispose();
-        bindingGroup.unbind();
     }
 
     /**
@@ -1390,9 +1425,11 @@ public class Alb_baulastEditorPanel extends javax.swing.JPanel implements Dispos
                                         Exceptions.printStackTrace(ex);
                                     }
                                 } else {
-                                    cidsBean.removePropertyChangeListener(listener);
                                     chkGeprueft.setSelected(false);
-                                    cidsBean.addPropertyChangeListener(listener);
+                                    cidsBean.addPropertyChangeListener(
+                                        WeakListeners.propertyChange(
+                                            listener = new CidsBeanListener(),
+                                            cidsBean));
                                 }
                             }
                         });
@@ -1413,11 +1450,13 @@ public class Alb_baulastEditorPanel extends javax.swing.JPanel implements Dispos
                         cidsBean.setProperty("pruefdatum", zeit);
                         cidsBean.setProperty(
                             "pruefkommentar",
-                            "Von "
+                            DateFormat.getDateInstance().format(zeit)
+                                    + " deaktiviert ("
                                     + name
-                                    + " am "
-                                    + DateFormat.getDateInstance().format(zeit)
-                                    + " auf ungeprüft gesetzt");
+                                    + ")"
+                                    + ((oldPruefdatum != null)
+                                        ? (" - letzte Prüfung: " + DateFormat.getDateInstance().format(oldPruefdatum)
+                                            + " " + oldGeprueft_Von) : ""));
                     } catch (Exception ex) {
                         Log.error("cannot set CidsBean property", ex);
                     }

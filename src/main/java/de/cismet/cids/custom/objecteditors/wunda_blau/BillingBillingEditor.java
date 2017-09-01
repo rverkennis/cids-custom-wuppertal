@@ -16,6 +16,8 @@ import Sirius.navigator.ui.RequestsFullSizeComponent;
 
 import org.apache.log4j.Logger;
 
+import java.sql.Timestamp;
+
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 
@@ -812,6 +814,12 @@ public class BillingBillingEditor extends javax.swing.JPanel implements CidsBean
                 cidsBean.setProperty("aenderung_alter_wert", originalProjektbezeichnung);
                 cidsBean.setProperty("aenderung_neuer_wert", txtProjektbezeichnung.getText());
             }
+            if ((cidsBean != null) && ((Boolean)cidsBean.getProperty("abgerechnet"))
+                        && (((Date)cidsBean.getProperty("abrechnungsdatum")) == null)) {
+                cidsBean.setProperty("abrechnungsdatum", new Timestamp(new Date().getTime()));
+            } else if ((cidsBean != null) && !((Boolean)cidsBean.getProperty("abgerechnet"))) {
+                cidsBean.setProperty("abrechnungsdatum", null);
+            }
             return true;
         } catch (Exception ex) {
             LOG.error(ex.getMessage(), ex);
@@ -861,8 +869,11 @@ public class BillingBillingEditor extends javax.swing.JPanel implements CidsBean
             text += "Neuer Wert: " + aenderung_neuer_wert;
         }
         txtaAenderung.setText(text);
-
-        txtaBerechnung.setText(cidsBean.getProperty("berechnung").toString());
+        if (cidsBean.getProperty("berechnung") != null) {
+            txtaBerechnung.setText(cidsBean.getProperty("berechnung").toString());
+        } else {
+            txtaBerechnung.setText("");
+        }
 
         txtAngelegt_am.setText(DATE_FORMAT.format(cidsBean.getProperty("ts")));
 

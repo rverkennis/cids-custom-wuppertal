@@ -5,10 +5,6 @@
 *              ... and it just works.
 *
 ****************************************************/
-/*
- * To change this template, choose Tools | Templates
- * and open the template in the editor.
- */
 package de.cismet.cids.custom.reports.wunda_blau;
 
 import Sirius.navigator.ui.ComponentRegistry;
@@ -43,28 +39,31 @@ public class BillingStatisticsReport {
 
     private static final String REPORT_URL = "/de/cismet/cids/custom/reports/wunda_blau/geschaeftsstatisktik.jasper";
 
+    private static final org.apache.log4j.Logger LOG = org.apache.log4j.Logger.getLogger(
+            BillingStatisticsReport.class);
+
     //~ Instance fields --------------------------------------------------------
+
+    protected Date from;
+    protected Date till;
+    protected int amountTotalDownloads;
+    protected int amountWithCosts;
+    protected int amountWithoutCosts;
+    protected int amountVUamtlicherLageplan;
+    protected int amountVUhoheitlicheVermessung;
+    protected int amountVUsonstige;
+    protected int amountVUamtlicherLageplanGB = 0;
+    protected int amountVUhoheitlicheVermessungGB = 0;
+    protected int amountVUsonstigeGB = 0;
+    protected int amountWithCostsVU = 0;
+    protected int amountWithCostsWiederver = 0;
+    protected double earningsWithCostsVU = 0;
+    protected double earningsWithCostsWiederver = 0;
+    protected int amountWiederverkaeufe = 0;
+    protected int amountWiederverkaeufeGB = 0;
 
     SwingWorker<JasperPrint, Void> downloadWorker;
     Collection<CidsBean> billingBeans;
-
-    private Date from;
-    private Date till;
-    private int amountTotalDownloads;
-    private int amountWithCosts;
-    private int amountWithoutCosts;
-    private int amountVUamtlicherLageplan;
-    private int amountVUhoheitlicheVermessung;
-    private int amountVUsonstige;
-    private int amountVUamtlicherLageplanGB = 0;
-    private int amountVUhoheitlicheVermessungGB = 0;
-    private int amountVUsonstigeGB = 0;
-    private int amountWithCostsVU = 0;
-    private int amountWithCostsWiederver = 0;
-    private double earningsWithCostsVU = 0;
-    private double earningsWithCostsWiederver = 0;
-    private int amountWiederverkaeufe = 0;
-    private int amountWiederverkaeufeGB = 0;
 
     //~ Constructors -----------------------------------------------------------
 
@@ -132,6 +131,33 @@ public class BillingStatisticsReport {
 
     /**
      * DOCUMENT ME!
+     *
+     * @return  DOCUMENT ME!
+     */
+    protected String getReportUrl() {
+        return REPORT_URL;
+    }
+
+    /**
+     * DOCUMENT ME!
+     *
+     * @return  DOCUMENT ME!
+     */
+    protected String getFilename() {
+        return "buchungen_geschaeftsstatistik";
+    }
+
+    /**
+     * DOCUMENT ME!
+     *
+     * @return  DOCUMENT ME!
+     */
+    protected String getTitle() {
+        return "Buchungen: Geschäftsstatistik";
+    }
+
+    /**
+     * DOCUMENT ME!
      */
     public void generateReport() {
         final JasperReportDownload.JasperReportDataSourceGenerator dataSourceGenerator =
@@ -150,50 +176,95 @@ public class BillingStatisticsReport {
 
                 @Override
                 public Map generateParamters() {
-                    final HashMap params = new HashMap();
-
-                    params.put("from", from);
-                    if (till == null) {
-                        params.put("till", from);
-                    } else {
-                        params.put("till", till);
-                    }
-
-                    params.put("amountTotalDownloads", amountTotalDownloads);
-                    params.put("amountWithCosts", amountWithCosts);
-                    params.put("amountWithoutCosts", amountWithoutCosts);
-                    params.put("amountWithCostsVU", amountWithCostsVU);
-                    params.put("amountWithCostsWiederver", amountWithCostsWiederver);
-
-                    params.put("earningsWithCostsVU", earningsWithCostsVU);
-                    params.put("earningsWithCostsWiederver", earningsWithCostsWiederver);
-
-                    params.put("amountVUamtlicherLageplan", amountVUamtlicherLageplan);
-                    params.put("amountVUamtlicherLageplanGB", amountVUamtlicherLageplanGB);
-                    params.put("amountVUhoheitlicheVermessung", amountVUhoheitlicheVermessung);
-                    params.put("amountVUhoheitlicheVermessungGB", amountVUhoheitlicheVermessungGB);
-                    params.put("amountVUsonstige", amountVUsonstige);
-                    params.put("amountVUsonstigeGB", amountVUsonstigeGB);
-                    params.put("amountWiederverkaeufe", amountWiederverkaeufe);
-                    params.put("amountWiederverkaeufeGB", amountWiederverkaeufeGB);
-
-                    return params;
+                    return BillingStatisticsReport.this.generateParamters();
                 }
             };
 
-        if (DownloadManagerDialog.showAskingForUserTitle(ComponentRegistry.getRegistry().getMainWindow())) {
-            final String jobname = DownloadManagerDialog.getJobname();
-            final String filename = "buchungen_geschaeftsstatistik";
-            final String title = "Buchungen: Geschäftsstatistik";
+        if (DownloadManagerDialog.getInstance().showAskingForUserTitleDialog(
+                        ComponentRegistry.getRegistry().getMainWindow())) {
+            final String jobname = DownloadManagerDialog.getInstance().getJobName();
+            final String filename = getFilename();
+            final String title = getTitle();
 
             DownloadManager.instance()
                     .add(new JasperReportDownload(
-                            REPORT_URL,
+                            getReportUrl(),
                             parametersGenerator,
                             dataSourceGenerator,
                             jobname,
                             title,
                             filename));
         }
+    }
+
+    /**
+     * DOCUMENT ME!
+     *
+     * @return  DOCUMENT ME!
+     */
+    protected BillingStatisticsDataSourceAccumulation createDataSourceAccumulation() {
+        final BillingStatisticsDataSourceAccumulation dataSourceAccumulation =
+            new BillingStatisticsDataSourceAccumulation(billingBeans);
+        dataSourceAccumulation.fetchSearchResults();
+        return dataSourceAccumulation;
+    }
+
+    /**
+     * DOCUMENT ME!
+     *
+     * @return  DOCUMENT ME!
+     */
+    Map generateParamters() {
+        final HashMap params = new HashMap();
+
+        params.put("from", from);
+        if (till == null) {
+            params.put("till", from);
+        } else {
+            params.put("till", till);
+        }
+
+        params.put("dataSourceCollection", createDataSourceAccumulation());
+
+        params.put("amountTotalDownloads", amountTotalDownloads);
+        params.put("amountWithCosts", amountWithCosts);
+        params.put("amountWithoutCosts", amountWithoutCosts);
+        params.put("amountWithCostsVU", amountWithCostsVU);
+        params.put("amountWithCostsWiederver", amountWithCostsWiederver);
+
+        params.put("earningsWithCostsVU", earningsWithCostsVU);
+        params.put("earningsWithCostsWiederver", earningsWithCostsWiederver);
+
+        params.put("amountVUamtlicherLageplan", amountVUamtlicherLageplan);
+        params.put("amountVUamtlicherLageplanGB", amountVUamtlicherLageplanGB);
+        params.put("amountVUhoheitlicheVermessung", amountVUhoheitlicheVermessung);
+        params.put("amountVUhoheitlicheVermessungGB", amountVUhoheitlicheVermessungGB);
+        params.put("amountVUsonstige", amountVUsonstige);
+        params.put("amountVUsonstigeGB", amountVUsonstigeGB);
+        params.put("amountWiederverkaeufe", amountWiederverkaeufe);
+        params.put("amountWiederverkaeufeGB", amountWiederverkaeufeGB);
+
+        return params;
+    }
+    /**
+     * DOCUMENT ME!
+     *
+     * @param   list         DOCUMENT ME!
+     * @param   conjunction  DOCUMENT ME!
+     *
+     * @return  DOCUMENT ME!
+     */
+    public static String joinCidsBeanIds(final Collection<CidsBean> list, final String conjunction) {
+        final StringBuilder sb = new StringBuilder();
+        boolean first = true;
+        for (final CidsBean item : list) {
+            if (first) {
+                first = false;
+            } else {
+                sb.append(conjunction);
+            }
+            sb.append(item.getPrimaryKeyValue());
+        }
+        return sb.toString();
     }
 }
